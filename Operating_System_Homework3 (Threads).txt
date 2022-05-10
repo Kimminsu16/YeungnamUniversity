@@ -1,0 +1,74 @@
+#include <stdio.h>
+#include <stdbool.h>
+#include <windows.h>
+#include <process.h>
+#include <sysinfoapi.h>
+#define NUM_THREAD 4
+#define MAX_TESTED 10000
+unsigned long tested = 2;
+unsigned long num_prime[NUM_THREAD] = { 0 };
+HANDLE hMutex;
+HANDLE threads[NUM_THREAD]; // 추가
+
+
+bool is_prime(int cur_tested) {
+	// TODO: cur_tested가 소수이면 true, 아니면 false를 리턴하도록 코딩
+	int cnt = 0;
+	for (int i = 2; i < cur_tested; i++)
+	{
+		if (cur_tested % i == 0)
+			cnt++;
+	}
+	if (cnt == 0)
+		return true;
+	else
+		return false;
+}
+
+unsigned int __stdcall myThreadFunc(void* arg) {
+	while (true) {
+		WaitForSingleObject(hMutex, INFINITE); // Mutex가 신호가 들어올때까지 대기
+		// 여기서부터
+		int cur_tested = tested;
+		if (cur_tested <= MAX_TESTED) {
+			tested += 1;
+		}
+		else {
+			break;
+		}
+		// 여기까지 임계구역
+		ReleaseMutex(hMutex); // Mutex에 신호를 보냄
+		if (is_prime(cur_tested))
+			*((int*)arg) += 1; // *((int*)arg)는 num_prime[i]를 뜻함
+	}
+	return 0;
+}
+
+int main() {
+	long long int begin = GetTickCount64();
+	// myThreadFunc() 함수의 크리티컬 섹션을 보호하기 위한 뮤텍스 락 생성
+	hMutex = CreateMutex(NULL, FALSE, NULL);
+
+	//
+	// NUM_THREAD개의 스레드를 만들어서 "myThreadFunc()" 함수를 동시에 실행
+	// i번째 스레드는 자신이 발견한 소수의 개수를 "num_prime[i]"에 저장
+	//
+	for(int i = 0; i < NUM_THREAD; i++)
+		threads[i] = (HANDLE)_beginthreadex(NULL, 0, myThreadFunc, &num_prime, 0, NULL);
+
+	WaitForMultipleObjects(NUM_THREAD, threads, TRUE, INFINITE);
+
+	for(int i = 0; i < NUM_THREAD; i++)
+		CloseHandle(threads[i]);
+	CloseHandle(hMutex);
+
+	long long int end = GetTickCount64();
+	
+	// 각 스레드가 발견한 소수의 개수를 더해 총 소수의 계수 계산
+	unsigned int total = 0;
+	for (int i = 0; i < NUM_THREAD; i++) {
+		total += num_prime[i];
+	}
+	printf("%d 이하의 소수 개수는 %d개입니다 (실행시간=%I64d msec).\n", MAX_TESTED, total, end - begin);
+	return 0;
+}
